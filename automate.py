@@ -15,7 +15,7 @@ from cookie_store import cookie_store
 from scheduler import scheduler_manager
 
 
-class QQMusicController:
+class MusicAppController:
     QQ_MUSIC_PATHS = [
         r"C:\Program Files (x86)\Tencent\QQMusic\QQMusic.exe",
         r"C:\Program Files\Tencent\QQMusic\QQMusic.exe",
@@ -23,34 +23,63 @@ class QQMusicController:
         r"D:\Program Files\Tencent\QQMusic\QQMusic.exe",
     ]
     
-    def __init__(self):
+    NETEASE_MUSIC_PATHS = [
+        r"C:\Program Files (x86)\Netease\CloudMusic\cloudmusic.exe",
+        r"C:\Program Files\Netease\CloudMusic\cloudmusic.exe",
+        r"D:\Program Files (x86)\Netease\CloudMusic\cloudmusic.exe",
+        r"D:\Program Files\Netease\CloudMusic\cloudmusic.exe",
+    ]
+    
+    PROCESS_NAMES = {
+        "qqmusic": "QQMusic.exe",
+        "netease": "cloudmusic.exe"
+    }
+    
+    def __init__(self, platform: str = "qqmusic"):
+        self.platform = platform
         self.process: Optional[subprocess.Popen] = None
         self.executable_path: Optional[str] = None
         self._find_executable()
     
+    def _get_paths(self) -> list:
+        if self.platform == "netease":
+            return self.NETEASE_MUSIC_PATHS
+        return self.QQ_MUSIC_PATHS
+    
+    def _get_config_path(self) -> Optional[str]:
+        if self.platform == "netease":
+            return settings.NETEASEMUSIC_PATH
+        return settings.QQMUSIC_PATH
+    
+    def _get_env_key(self) -> str:
+        if self.platform == "netease":
+            return "NETEASEMUSIC_PATH"
+        return "QQMUSIC_PATH"
+    
     def _find_executable(self) -> bool:
-        if settings.QQMUSIC_PATH and os.path.exists(settings.QQMUSIC_PATH):
-            self.executable_path = settings.QQMUSIC_PATH
-            print(f"[QQMusic] Found at: {settings.QQMUSIC_PATH}")
+        config_path = self._get_config_path()
+        if config_path and os.path.exists(config_path):
+            self.executable_path = config_path
+            print(f"[{self.platform}] Found at: {config_path}")
             return True
         
-        for path in self.QQ_MUSIC_PATHS:
+        for path in self._get_paths():
             if os.path.exists(path):
                 self.executable_path = path
-                print(f"[QQMusic] Found at: {path}")
+                print(f"[{self.platform}] Found at: {path}")
                 return True
         
-        print("[QQMusic] QQ Music executable not found in default paths")
-        print("[QQMusic] Please set QQMUSIC_PATH in .env file")
+        print(f"[{self.platform}] Executable not found in default paths")
+        print(f"[{self.platform}] Please set {self._get_env_key()} in .env file")
         return False
     
     def start(self) -> bool:
         if not self.executable_path:
-            env_path = os.environ.get('QQMUSIC_PATH')
+            env_path = os.environ.get(self._get_env_key())
             if env_path and os.path.exists(env_path):
                 self.executable_path = env_path
             else:
-                print("[QQMusic] No valid executable path found")
+                print(f"[{self.platform}] No valid executable path found")
                 return False
         
         try:
@@ -59,58 +88,63 @@ class QQMusicController:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
-            print(f"[QQMusic] Started QQ Music (PID: {self.process.pid})")
+            print(f"[{self.platform}] Started (PID: {self.process.pid})")
             return True
         except Exception as e:
-            print(f"[QQMusic] Failed to start: {e}")
+            print(f"[{self.platform}] Failed to start: {e}")
             return False
     
     def stop(self) -> bool:
+        process_name = self.PROCESS_NAMES.get(self.platform, "unknown.exe")
+        
         if self.process:
             try:
                 self.process.terminate()
                 self.process.wait(timeout=10)
-                print("[QQMusic] QQ Music terminated gracefully")
+                print(f"[{self.platform}] Terminated gracefully")
                 return True
             except subprocess.TimeoutExpired:
                 self.process.kill()
-                print("[QQMusic] QQ Music killed forcefully")
+                print(f"[{self.platform}] Killed forcefully")
                 return True
             except Exception as e:
-                print(f"[QQMusic] Failed to stop: {e}")
+                print(f"[{self.platform}] Failed to stop: {e}")
                 return False
         else:
             try:
                 subprocess.run(
-                    ["taskkill", "/F", "/IM", "QQMusic.exe"],
+                    ["taskkill", "/F", "/IM", process_name],
                     capture_output=True,
                     timeout=10
                 )
-                print("[QQMusic] QQ Music killed via taskkill")
+                print(f"[{self.platform}] Killed via taskkill")
                 return True
             except Exception as e:
-                print(f"[QQMusic] Failed to kill via taskkill: {e}")
+                print(f"[{self.platform}] Failed to kill via taskkill: {e}")
                 return False
     
     def is_running(self) -> bool:
+        process_name = self.PROCESS_NAMES.get(self.platform, "unknown.exe")
+        
         if self.process and self.process.poll() is None:
             return True
         
         try:
             result = subprocess.run(
-                ["tasklist", "/FI", "IMAGENAME eq QQMusic.exe"],
+                ["tasklist", "/FI", f"IMAGENAME eq {process_name}"],
                 capture_output=True,
                 text=True,
                 timeout=5
             )
-            return "QQMusic.exe" in result.stdout
+            return process_name in result.stdout
         except:
             return False
 
 
 class AutomationManager:
     def __init__(self):
-        self.qqmusic = QQMusicController()
+        self.qqmusic = MusicAppController("qqmusic")
+        self.netease = MusicAppController("netease")
         self.proxy_process: Optional[subprocess.Popen] = None
         self.running = False
         self.cycle_count = 0
@@ -193,39 +227,59 @@ class AutomationManager:
             print(f"[Cleanup] Error clearing cookies: {e}")
             return False
     
-    async def send_cookies(self) -> dict:
-        print("[Send] Sending cookies to Meting-API...")
-        result = await scheduler_manager.send_cookies_to_target()
+    async def send_cookies(self, platform: str = "all") -> dict:
+        print(f"[Send] Sending {platform} cookies to Meting-API...")
+        result = await scheduler_manager.send_cookies_to_target(platform)
         
         if result.get('success'):
             print(f"[Send] Successfully sent cookies")
-            if result.get('data'):
-                data = result['data']
-                print(f"[Send] Cookie ID: {data.get('id', 'N/A')}")
+            for p, presult in result.get('platforms', {}).items():
+                if presult.get('success'):
+                    print(f"[Send] {p}: OK")
+                else:
+                    print(f"[Send] {p}: {presult.get('error', 'Unknown error')}")
         else:
             print(f"[Send] Failed: {result.get('error', 'Unknown error')}")
         
         return result
     
-    def wait_for_cookies(self, timeout: int = 300) -> bool:
-        print(f"[Wait] Waiting for cookies (timeout: {timeout}s)...")
+    def wait_for_cookies(self, platform: str = "all", timeout: int = 300) -> bool:
+        print(f"[Wait] Waiting for {platform} cookies (timeout: {timeout}s)...")
         
         start_time = time.time()
         last_cookie_count = 0
         
         while time.time() - start_time < timeout:
             cookie_store.reload()
+            
+            qqmusic_valid = cookie_store.has_valid_qqmusic_cookies()
+            netease_valid = cookie_store.has_valid_netease_cookies()
+            
+            if platform == "all":
+                if qqmusic_valid or netease_valid:
+                    print(f"[Wait] Valid cookies found!")
+                    if qqmusic_valid:
+                        cookies = cookie_store.get_all_cookies_flat("qqmusic")
+                        print(f"[Wait] QQ Music UIN: {cookies.get('qqmusic_uin') or cookies.get('uin')}")
+                    if netease_valid:
+                        cookies = cookie_store.get_all_cookies_flat("netease")
+                        print(f"[Wait] Netease MUSIC_U: {cookies.get('MUSIC_U', '')[:20]}...")
+                    return True
+            elif platform == "qqmusic":
+                if qqmusic_valid:
+                    cookies = cookie_store.get_all_cookies_flat("qqmusic")
+                    print(f"[Wait] QQ Music cookies found!")
+                    print(f"[Wait] UIN: {cookies.get('qqmusic_uin') or cookies.get('uin')}")
+                    return True
+            elif platform == "netease":
+                if netease_valid:
+                    cookies = cookie_store.get_all_cookies_flat("netease")
+                    print(f"[Wait] Netease cookies found!")
+                    print(f"[Wait] MUSIC_U: {cookies.get('MUSIC_U', '')[:20]}...")
+                    return True
+            
             all_cookies = cookie_store.get_all_cookies_flat()
             cookie_count = len(all_cookies)
-            
-            qqmusic_uin = all_cookies.get('qqmusic_uin') or all_cookies.get('uin', '')
-            qqmusic_key = all_cookies.get('qqmusic_key', '')
-            
-            if qqmusic_uin and qqmusic_key:
-                print(f"[Wait] Valid cookies found!")
-                print(f"[Wait] UIN: {qqmusic_uin}")
-                print(f"[Wait] Key: {qqmusic_key[:20]}...")
-                return True
             
             if cookie_count != last_cookie_count:
                 print(f"[Wait] Captured {cookie_count} cookies...")
@@ -236,16 +290,18 @@ class AutomationManager:
         print("[Wait] Timeout - no valid cookies found")
         return False
     
-    async def run_cycle(self) -> dict:
+    async def run_cycle(self, platform: str = "all") -> dict:
         print("\n" + "=" * 60)
         print(f"[Cycle] Starting cycle #{self.cycle_count + 1}")
         print(f"[Cycle] Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"[Cycle] Platform: {platform}")
         print("=" * 60)
         
         result = {
             "cycle": self.cycle_count + 1,
             "success": False,
-            "error": None
+            "error": None,
+            "platform": platform
         }
         
         try:
@@ -260,27 +316,41 @@ class AutomationManager:
                 time.sleep(1)
             print("\r[Wait] Proxy ready!                    ")
             
-            print("\n[Step 3/7] Starting QQ Music...")
-            if not self.qqmusic.start():
-                result["error"] = "Failed to start QQ Music"
+            apps_started = []
+            
+            if platform in ["all", "qqmusic"]:
+                print("\n[Step 3/7] Starting QQ Music...")
+                if self.qqmusic.start():
+                    apps_started.append("qqmusic")
+                else:
+                    print("[QQMusic] Failed to start, continuing...")
+            
+            if platform in ["all", "netease"]:
+                print("\n[Step 4/7] Starting Netease Music...")
+                if self.netease.start():
+                    apps_started.append("netease")
+                else:
+                    print("[Netease] Failed to start, continuing...")
+            
+            if not apps_started:
+                result["error"] = "No music apps started"
                 self.stop_proxy()
                 return result
             
-            print("\n[Step 4/7] Waiting for cookies...")
+            print("\n[Step 5/7] Waiting for cookies...")
             time.sleep(10)
             
-            if not self.wait_for_cookies(timeout=300):
+            if not self.wait_for_cookies(platform=platform, timeout=300):
                 result["error"] = "No valid cookies captured"
             else:
-                print("\n[Step 5/7] Sending cookies...")
-                send_result = await self.send_cookies()
+                print("\n[Step 6/7] Sending cookies...")
+                send_result = await self.send_cookies(platform)
                 result["success"] = send_result.get('success', False)
                 result["send_result"] = send_result
             
-            print("\n[Step 6/7] Stopping QQ Music...")
+            print("\n[Step 7/7] Stopping apps and cleaning up...")
             self.qqmusic.stop()
-            
-            print("\n[Step 7/7] Stopping proxy and cleaning up...")
+            self.netease.stop()
             self.stop_proxy()
             self.clear_cookies()
             
@@ -291,6 +361,7 @@ class AutomationManager:
             result["error"] = str(e)
             print(f"[Error] {e}")
             self.qqmusic.stop()
+            self.netease.stop()
             self.stop_proxy()
         
         print("\n" + "-" * 60)
@@ -302,11 +373,12 @@ class AutomationManager:
         
         return result
     
-    async def run_forever(self, interval_hours: int = 24):
+    async def run_forever(self, interval_hours: int = 24, platform: str = "all"):
         print("\n" + "=" * 60)
-        print("QQ Music Cookie Manager - Automation Mode")
+        print("Music Cookie Manager - Automation Mode")
         print("=" * 60)
         print(f"Interval: Every {interval_hours} hours")
+        print(f"Platform: {platform}")
         print(f"Proxy: {settings.PROXY_HOST}:{settings.PROXY_PORT}")
         print(f"Target API: {settings.TARGET_API_URL or 'Not configured'}")
         print("=" * 60 + "\n")
@@ -318,7 +390,7 @@ class AutomationManager:
         self.running = True
         
         while self.running:
-            await self.run_cycle()
+            await self.run_cycle(platform)
             
             if self.running:
                 next_run = datetime.now() + timedelta(hours=interval_hours)
@@ -334,6 +406,7 @@ class AutomationManager:
         print("\n[Stop] Stopping automation...")
         self.running = False
         self.qqmusic.stop()
+        self.netease.stop()
         self.stop_proxy()
 
 
@@ -349,18 +422,20 @@ def signal_handler(sig, frame):
 async def main():
     import argparse
     
-    parser = argparse.ArgumentParser(description="QQ Music Cookie Automation")
+    parser = argparse.ArgumentParser(description="Music Cookie Automation")
     parser.add_argument("--interval", type=int, default=24, help="Interval in hours (default: 24)")
     parser.add_argument("--once", action="store_true", help="Run only once")
+    parser.add_argument("--platform", type=str, default="all", choices=["all", "qqmusic", "netease"],
+                        help="Platform to capture cookies from (default: all)")
     args = parser.parse_args()
     
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
     if args.once:
-        await automation_manager.run_cycle()
+        await automation_manager.run_cycle(platform=args.platform)
     else:
-        await automation_manager.run_forever(interval_hours=args.interval)
+        await automation_manager.run_forever(interval_hours=args.interval, platform=args.platform)
 
 
 if __name__ == "__main__":

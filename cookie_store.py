@@ -8,6 +8,7 @@ from config import settings
 
 
 class CookieRecord(BaseModel):
+    platform: str = "qqmusic"
     cookies: Dict[str, str]
     source_host: str
     captured_at: str
@@ -44,6 +45,8 @@ class CookieStore:
                 with open(settings.COOKIE_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     for key, value in data.items():
+                        if 'platform' not in value:
+                            value['platform'] = 'qqmusic'
                         self._cookies[key] = CookieRecord(**value)
                 print(f"[Store] Loaded {len(self._cookies)} cookie records")
             except Exception as e:
@@ -61,25 +64,27 @@ class CookieStore:
         except Exception as e:
             print(f"[Store] Error saving cookies: {e}")
     
-    def save_cookies(self, source_host: str, cookies: Dict[str, str]) -> None:
+    def save_cookies(self, source_host: str, cookies: Dict[str, str], platform: str = "qqmusic") -> None:
         with self._data_lock:
             now = datetime.now().isoformat()
+            key = f"{platform}_{source_host}"
             
-            if source_host in self._cookies:
-                record = self._cookies[source_host]
+            if key in self._cookies:
+                record = self._cookies[key]
                 record.cookies.update(cookies)
                 record.updated_at = now
             else:
                 record = CookieRecord(
+                    platform=platform,
                     cookies=cookies,
                     source_host=source_host,
                     captured_at=now,
                     updated_at=now
                 )
-                self._cookies[source_host] = record
+                self._cookies[key] = record
             
             self._save_to_file()
-            print(f"[Store] Saved {len(cookies)} cookies from {source_host}")
+            print(f"[Store] Saved {len(cookies)} {platform} cookies from {source_host}")
     
     def get_cookies(self, source_host: Optional[str] = None) -> Dict[str, Any]:
         with self._data_lock:
@@ -92,15 +97,26 @@ class CookieStore:
                 for key, value in self._cookies.items()
             }
     
-    def get_all_cookies_flat(self) -> Dict[str, str]:
+    def get_cookies_by_platform(self, platform: str) -> Dict[str, CookieRecord]:
+        with self._data_lock:
+            return {
+                key: record for key, record in self._cookies.items()
+                if record.platform == platform
+            }
+    
+    def get_all_cookies_flat(self, platform: str = None) -> Dict[str, str]:
         with self._data_lock:
             all_cookies = {}
             for record in self._cookies.values():
-                all_cookies.update(record.cookies)
+                if platform is None or record.platform == platform:
+                    all_cookies.update(record.cookies)
             return all_cookies
     
-    def get_cookie_string(self, source_host: Optional[str] = None) -> str:
-        cookies = self.get_all_cookies_flat() if not source_host else self.get_cookies(source_host).get('cookies', {})
+    def get_cookie_string(self, source_host: Optional[str] = None, platform: str = None) -> str:
+        if source_host:
+            cookies = self.get_cookies(source_host).get('cookies', {})
+        else:
+            cookies = self.get_all_cookies_flat(platform)
         return '; '.join(f"{k}={v}" for k, v in cookies.items())
     
     def delete_cookies(self, source_host: str) -> bool:
@@ -130,6 +146,14 @@ class CookieStore:
                 self._save_to_file()
                 return True
             return False
+    
+    def has_valid_qqmusic_cookies(self) -> bool:
+        cookies = self.get_all_cookies_flat(platform="qqmusic")
+        return bool(cookies.get('qqmusic_uin') or cookies.get('uin')) and bool(cookies.get('qqmusic_key'))
+    
+    def has_valid_netease_cookies(self) -> bool:
+        cookies = self.get_all_cookies_flat(platform="netease")
+        return bool(cookies.get('MUSIC_U'))
 
 
 cookie_store = CookieStore()

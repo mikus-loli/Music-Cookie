@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 class Settings(BaseSettings):
-    APP_NAME: str = "QQMusic Cookie Manager"
+    APP_NAME: str = "Music Cookie Manager"
     DEBUG: bool = False
     
     PROXY_HOST: str = "127.0.0.1"
@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     TARGET_API_TOKEN: Optional[str] = None
     
     QQMUSIC_PATH: Optional[str] = None
+    NETEASEMUSIC_PATH: Optional[str] = None
     
     DATA_DIR: Path = Path("data")
     COOKIE_FILE: Path = Path("data/cookies.json")
@@ -54,6 +55,25 @@ class Settings(BaseSettings):
         "qzone.qq.com",
         "vip.qq.com",
         "qq.com",
+    ]
+    
+    NETEASE_MUSIC_DOMAINS: list = [
+        "music.163.com",
+        "interface.music.163.com",
+        "api.music.163.com",
+        "m.music.163.com",
+        "music.126.net",
+        "interface3.music.163.com",
+        "interface.music.163.com",
+        "clientlog.music.163.com",
+        "clientlog3.music.163.com",
+        "p1.music.126.net",
+        "p2.music.126.net",
+        "m7.music.126.net",
+        "m8.music.126.net",
+        "mam.netease.com",
+        "client.music.163.com",
+        "music.163.com.00.bg.mp",
     ]
 
     class Config:
