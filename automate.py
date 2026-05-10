@@ -231,15 +231,22 @@ class AutomationManager:
         print(f"[Send] Sending {platform} cookies to Meting-API...")
         result = await scheduler_manager.send_cookies_to_target(platform)
         
-        if result.get('success'):
-            print(f"[Send] Successfully sent cookies")
-            for p, presult in result.get('platforms', {}).items():
-                if presult.get('success'):
-                    print(f"[Send] {p}: OK")
-                else:
-                    print(f"[Send] {p}: {presult.get('error', 'Unknown error')}")
+        platforms = result.get('platforms', {})
+        success_count = sum(1 for p in platforms.values() if p.get('success'))
+        total_count = len(platforms)
+        
+        for p, presult in platforms.items():
+            if presult.get('success'):
+                print(f"[Send] {p}: OK")
+            else:
+                print(f"[Send] {p}: {presult.get('error', 'Failed')}")
+        
+        if success_count == total_count and total_count > 0:
+            print(f"[Send] All platforms sent successfully ({success_count}/{total_count})")
+        elif success_count > 0:
+            print(f"[Send] Partial success ({success_count}/{total_count} platforms)")
         else:
-            print(f"[Send] Failed: {result.get('error', 'Unknown error')}")
+            print(f"[Send] All platforms failed")
         
         return result
     
@@ -290,6 +297,38 @@ class AutomationManager:
         print("[Wait] Timeout - no valid cookies found")
         return False
     
+    async def _run_platform_cycle(self, platform: str) -> dict:
+        print(f"\n{'='*50}")
+        print(f"[{platform.upper()}] Starting {platform} cycle...")
+        print(f"{'='*50}")
+        
+        result = {"platform": platform, "success": False, "error": None}
+        
+        controller = self.qqmusic if platform == "qqmusic" else self.netease
+        
+        print(f"\n[{platform}] Starting app...")
+        if not controller.start():
+            result["error"] = f"Failed to start {platform}"
+            print(f"[{platform}] Failed to start app")
+            return result
+        
+        print(f"[{platform}] Waiting for cookies (timeout: 300s)...")
+        time.sleep(10)
+        
+        if not self.wait_for_cookies(platform=platform, timeout=300):
+            result["error"] = "No valid cookies captured"
+            print(f"[{platform}] No valid cookies found")
+        else:
+            print(f"\n[{platform}] Sending cookies...")
+            send_result = await self.send_cookies(platform)
+            result["success"] = send_result.get('success', False)
+            result["send_result"] = send_result
+        
+        print(f"\n[{platform}] Stopping app...")
+        controller.stop()
+        
+        return result
+    
     async def run_cycle(self, platform: str = "all") -> dict:
         print("\n" + "=" * 60)
         print(f"[Cycle] Starting cycle #{self.cycle_count + 1}")
@@ -301,56 +340,40 @@ class AutomationManager:
             "cycle": self.cycle_count + 1,
             "success": False,
             "error": None,
-            "platform": platform
+            "platform": platform,
+            "platforms": {}
         }
         
         try:
-            print("\n[Step 1/7] Starting proxy...")
+            print("\n[Step 1] Starting proxy...")
             if not self.start_proxy():
                 result["error"] = "Failed to start proxy"
                 return result
             
-            print("\n[Step 2/7] Waiting for proxy to stabilize (60s)...")
+            print("\n[Step 2] Waiting for proxy to stabilize (60s)...")
             for i in range(60, 0, -1):
                 print(f"\r[Wait] {i} seconds remaining...", end="", flush=True)
                 time.sleep(1)
             print("\r[Wait] Proxy ready!                    ")
             
-            apps_started = []
-            
-            if platform in ["all", "qqmusic"]:
-                print("\n[Step 3/7] Starting QQ Music...")
-                if self.qqmusic.start():
-                    apps_started.append("qqmusic")
-                else:
-                    print("[QQMusic] Failed to start, continuing...")
-            
-            if platform in ["all", "netease"]:
-                print("\n[Step 4/7] Starting Netease Music...")
-                if self.netease.start():
-                    apps_started.append("netease")
-                else:
-                    print("[Netease] Failed to start, continuing...")
-            
-            if not apps_started:
-                result["error"] = "No music apps started"
-                self.stop_proxy()
-                return result
-            
-            print("\n[Step 5/7] Waiting for cookies...")
-            time.sleep(10)
-            
-            if not self.wait_for_cookies(platform=platform, timeout=300):
-                result["error"] = "No valid cookies captured"
+            platforms_to_run = []
+            if platform == "all":
+                platforms_to_run = ["qqmusic", "netease"]
             else:
-                print("\n[Step 6/7] Sending cookies...")
-                send_result = await self.send_cookies(platform)
-                result["success"] = send_result.get('success', False)
-                result["send_result"] = send_result
+                platforms_to_run = [platform]
             
-            print("\n[Step 7/7] Stopping apps and cleaning up...")
-            self.qqmusic.stop()
-            self.netease.stop()
+            for idx, p in enumerate(platforms_to_run, 1):
+                print(f"\n[Step 2.{idx}] Processing {p}...")
+                p_result = await self._run_platform_cycle(p)
+                result["platforms"][p] = p_result
+                
+                self.clear_cookies()
+                time.sleep(5)
+            
+            success_count = sum(1 for r in result["platforms"].values() if r.get("success"))
+            result["success"] = success_count > 0
+            
+            print("\n[Step 3] Stopping proxy and cleaning up...")
             self.stop_proxy()
             self.clear_cookies()
             
