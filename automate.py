@@ -217,9 +217,19 @@ class AutomationManager:
     def clear_cookies(self) -> bool:
         try:
             cookie_file = settings.COOKIE_FILE
-            if cookie_file.exists():
-                cookie_file.unlink()
-                print(f"[Cleanup] Deleted {cookie_file}")
+            max_retries = 5
+            for i in range(max_retries):
+                try:
+                    if cookie_file.exists():
+                        cookie_file.unlink()
+                        print(f"[Cleanup] Deleted {cookie_file}")
+                    break
+                except PermissionError:
+                    if i < max_retries - 1:
+                        print(f"[Cleanup] File locked, retrying ({i + 1}/{max_retries})...")
+                        time.sleep(2)
+                    else:
+                        raise
             
             cookie_store.clear_all()
             print("[Cleanup] Cookie store cleared")
@@ -314,8 +324,13 @@ class AutomationManager:
             await notifier.cookie_captured(platform, success=False)
             return result
         
+        print(f"[{platform}] Waiting for app to initialize (60s)...")
+        for i in range(60, 0, -1):
+            print(f"\r[{platform}] {i} seconds remaining...", end="", flush=True)
+            time.sleep(1)
+        print(f"\r[{platform}] App ready!                    ")
+        
         print(f"[{platform}] Waiting for cookies (timeout: 300s)...")
-        time.sleep(10)
         
         if not self.wait_for_cookies(platform=platform, timeout=300):
             result["error"] = "No valid cookies captured"
