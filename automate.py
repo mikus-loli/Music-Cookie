@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from config import settings
 from cookie_store import cookie_store
 from scheduler import scheduler_manager
+from notify import notifier
 
 
 class MusicAppController:
@@ -310,6 +311,7 @@ class AutomationManager:
         if not controller.start():
             result["error"] = f"Failed to start {platform}"
             print(f"[{platform}] Failed to start app")
+            await notifier.cookie_captured(platform, success=False)
             return result
         
         print(f"[{platform}] Waiting for cookies (timeout: 300s)...")
@@ -318,11 +320,29 @@ class AutomationManager:
         if not self.wait_for_cookies(platform=platform, timeout=300):
             result["error"] = "No valid cookies captured"
             print(f"[{platform}] No valid cookies found")
+            await notifier.cookie_captured(platform, success=False)
         else:
+            cookies = cookie_store.get_all_cookies_flat(platform)
+            uin = ""
+            if platform == "qqmusic":
+                uin = cookies.get('qqmusic_uin') or cookies.get('uin', '')
+            else:
+                uin = cookies.get('MUSIC_U', '')
+            await notifier.cookie_captured(platform, uin=uin or "", success=True)
+            
             print(f"\n[{platform}] Sending cookies...")
             send_result = await self.send_cookies(platform)
             result["success"] = send_result.get('success', False)
             result["send_result"] = send_result
+            
+            platforms = send_result.get('platforms', {})
+            for p, presult in platforms.items():
+                detail = ""
+                if presult.get('success'):
+                    detail = f"已同步到 Meting-API"
+                else:
+                    detail = presult.get('error', '未知错误')
+                await notifier.cookie_sent(p, presult.get('success', False), detail)
         
         print(f"\n[{platform}] Stopping app...")
         controller.stop()
@@ -345,6 +365,8 @@ class AutomationManager:
         }
         
         try:
+            await notifier.cycle_start(self.cycle_count + 1)
+            
             print("\n[Step 1] Starting proxy...")
             if not self.start_proxy():
                 result["error"] = "Failed to start proxy"
@@ -383,6 +405,7 @@ class AutomationManager:
         except Exception as e:
             result["error"] = str(e)
             print(f"[Error] {e}")
+            await notifier.error(f"自动化脚本错误: {e}")
             self.qqmusic.stop()
             self.netease.stop()
             self.stop_proxy()
@@ -393,6 +416,13 @@ class AutomationManager:
         if result.get('error'):
             print(f"[Cycle] Error: {result['error']}")
         print("-" * 60)
+        
+        summary_parts = []
+        for p, p_result in result.get("platforms", {}).items():
+            status = "✅" if p_result.get("success") else "❌"
+            summary_parts.append(f"{p}: {status}")
+        summary = "\n".join(summary_parts) if summary_parts else "无结果"
+        await notifier.cycle_end(self.cycle_count, result["success"], summary)
         
         return result
     

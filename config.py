@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     QQMUSIC_PATH: Optional[str] = None
     NETEASEMUSIC_PATH: Optional[str] = None
     
+    MIOTIFY_ENABLED: bool = False
+    MIOTIFY_URL: Optional[str] = None
+    MIOTIFY_TOKEN: Optional[str] = None
+    
     DATA_DIR: Path = Path("data")
     COOKIE_FILE: Path = Path("data/cookies.json")
     

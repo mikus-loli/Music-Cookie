@@ -7,6 +7,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED, JobEvent
 from cookie_store import cookie_store
 from config import settings
+from notify import notifier
 
 
 class SchedulerManager:
@@ -164,6 +165,8 @@ class SchedulerManager:
                         user_info = data['userInfo']
                         print(f"[Scheduler] User: {user_info.get('nickname', 'N/A')}, VIP: {user_info.get('isVip', False)}")
                 
+                await notifier.cookie_sent("qqmusic", True, f"UIN: {meting_cookie['uin']}")
+                
                 return {
                     "success": True,
                     "platform": "qqmusic",
@@ -182,11 +185,13 @@ class SchedulerManager:
             except:
                 pass
             print(f"[Scheduler] QQ Music HTTP error: {e.response.status_code} - {error_detail}")
+            await notifier.cookie_sent("qqmusic", False, f"HTTP {e.response.status_code}: {error_detail}")
             return {"success": False, "platform": "qqmusic", "error": f"HTTP {e.response.status_code}: {error_detail}"}
             
         except httpx.RequestError as e:
             self.error_count += 1
             print(f"[Scheduler] QQ Music Request error: {str(e)}")
+            await notifier.cookie_sent("qqmusic", False, str(e))
             return {"success": False, "platform": "qqmusic", "error": str(e)}
             
         except Exception as e:
@@ -237,6 +242,8 @@ class SchedulerManager:
                         user_info = data['userInfo']
                         print(f"[Scheduler] User: {user_info.get('nickname', 'N/A')}, VIP: {user_info.get('isVip', False)}")
                 
+                await notifier.cookie_sent("netease", True, f"MUSIC_U: {netease_cookie['music_u'][:20]}...")
+                
                 return {
                     "success": True,
                     "platform": "netease",
@@ -254,11 +261,13 @@ class SchedulerManager:
             except:
                 pass
             print(f"[Scheduler] Netease Music HTTP error: {e.response.status_code} - {error_detail}")
+            await notifier.cookie_sent("netease", False, f"HTTP {e.response.status_code}: {error_detail}")
             return {"success": False, "platform": "netease", "error": f"HTTP {e.response.status_code}: {error_detail}"}
             
         except httpx.RequestError as e:
             self.error_count += 1
             print(f"[Scheduler] Netease Music Request error: {str(e)}")
+            await notifier.cookie_sent("netease", False, str(e))
             return {"success": False, "platform": "netease", "error": str(e)}
             
         except Exception as e:
