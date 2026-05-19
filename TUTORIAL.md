@@ -60,16 +60,54 @@ Music Cookie Manager 是一个自动抓取 QQ 音乐和网易云音乐客户端 
 
 - Windows 操作系统
 - Python 3.9+
+- **Visual C++ 生成工具**（编译 mitmproxy 依赖必需）
 - QQ音乐客户端（已登录）
 - 网易云音乐客户端（已登录，可选）
 
-### 1. 安装 Python
+### 1. 安装 Visual C++ 生成工具（必需）
+
+`mitmproxy` 的某些底层依赖（`zstandard`、`cffi`）需要 C++ 编译器才能安装。
+
+**方式一：安装 Visual Studio Build Tools（推荐）**
+
+1. 访问 [Visual Studio 下载页面](https://visualstudio.microsoft.com/zh-hans/downloads/)
+2. 展开 **"所有下载"** → 找到 **"Visual Studio 2022 生成工具"** → 下载
+3. 运行安装程序，勾选 **"C++ 生成工具"** 工作负荷
+4. 确保包含以下组件：
+   - MSVC v143 - VS 2022 C++ x64/x86 生成工具
+   - Windows 11 SDK (最新版本)
+   - C++ CMake 工具（可选）
+
+**方式二：使用预编译 wheel（绕过编译）**
+
+如果不想安装 C++ 环境，可以直接安装预编译好的 wheel 包：
+
+```bash
+# 激活虚拟环境后
+pip install zstandard --only-binary :all:
+pip install cffi --only-binary :all:
+pip install mitmproxy --only-binary :all:
+```
+
+> 如果部分包没有对应 Python 版本的预编译 wheel，此方法会失败，建议还是安装 C++ 生成工具。
+
+**方式三：使用精简版依赖（不需要 C++ 环境）**
+
+如果完全不想安装 C++ 环境和 mitmproxy：
+
+```bash
+pip install -r requirements-lite.txt
+```
+
+> 注意：精简版不包含 mitmproxy，**自动化模式 (`automate.py`) 无法使用**，但其他功能正常（API 服务、Web 管理后台、定时发送已存储的 Cookie）。
+
+### 2. 安装 Python
 
 如果尚未安装 Python，请从 [python.org](https://www.python.org/downloads/) 下载安装。
 
 > **重要**：安装时勾选 "Add Python to PATH"。
 
-### 2. 创建虚拟环境（推荐）
+### 3. 创建虚拟环境（推荐）
 
 ```powershell
 # 在项目目录打开终端
@@ -582,6 +620,28 @@ MUSIC_U=用户token; MUSIC_A=认证key; __csrf=csrf值
 ---
 
 ## 常见问题
+
+### Q: 安装依赖报错 `error: Microsoft Visual C++ 14.0 or greater is required`？
+
+A: `mitmproxy` 的底层依赖 `zstandard` 和 `cffi` 需要 C++ 编译器。三种解决方案：
+
+1. **安装 Visual Studio 2022 生成工具**（推荐，一劳永逸）
+   - 下载：https://visualstudio.microsoft.com/zh-hans/downloads/
+   - 安装时勾选 **"C++ 生成工具"** 工作负荷
+   - 约 3-5 GB 磁盘空间
+
+2. **使用预编译包绕过编译**
+   ```bash
+   pip install zstandard --only-binary :all:
+   pip install cffi --only-binary :all:
+   pip install -r requirements.txt --only-binary :all:
+   ```
+
+3. **使用轻量版依赖**（不需要 mitmproxy）
+   ```bash
+   pip install -r requirements-lite.txt
+   ```
+   > 注意：轻量版无法使用自动化代理抓包，但 API 服务和手动模式正常。
 
 ### Q: 自动化模式无法启动 QQ音乐/网易云音乐？
 

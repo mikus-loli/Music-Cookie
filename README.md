@@ -14,6 +14,17 @@ QQ音乐和网易云音乐客户端Cookie抓取工具，专为 [Meting-API](http
 
 ## 快速开始
 
+### 0. 安装 Visual C++ 生成工具（必需）
+
+`mitmproxy` 依赖 `zstandard`、`cffi` 需要 C++ 编译器。安装 [Visual Studio 2022 生成工具](https://visualstudio.microsoft.com/zh-hans/downloads/)，勾选 **"C++ 生成工具"** 工作负荷。
+
+> 如不想安装 C++ 环境，可尝试预编译安装：
+> ```bash
+> pip install zstandard --only-binary :all:
+> pip install cffi --only-binary :all:
+> pip install mitmproxy --only-binary :all:
+> ```
+
 ### 1. 安装依赖
 
 ```bash
